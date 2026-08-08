@@ -1,0 +1,276 @@
+name: Android Anti-Lag Build
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Source Code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'zulu'
+        java-version: '17'
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Setup Gradle 8.5
+      uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-version: 8.5
+
+    - name: Initialize Android Project Structure
+      run: |
+        mkdir -p app/src/main/java/com/antilag/service
+        mkdir -p app/src/main/jniLibs/arm64-v8a
+
+    - name: Generate Root build.gradle
+      run: |
+        cat << 'EOF' > build.gradle
+        buildscript {
+            repositories {
+                google()
+                mavenCentral()
+            }
+            dependencies {
+                classpath 'com.android.tools.build:gradle:8.2.2'
+            }
+        }
+        allprojects {
+            repositories {
+                google()
+                mavenCentral()
+            }
+        }
+        task clean(type: Delete) {
+            delete rootProject.buildDir
+        }
+        EOF
+
+    - name: Generate settings.gradle
+      run: |
+        cat << 'EOF' > settings.gradle
+        pluginManagement {
+            repositories {
+                google()
+                mavenCentral()
+                gradlePluginPortal()
+            }
+        }
+        dependencyResolutionManagement {
+            repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+            repositories {
+                google()
+                mavenCentral()
+            }
+        }
+        rootProject.name = "AntiLagProject"
+        include ':app'
+        EOF
+
+    - name: Generate App build.gradle
+      run: |
+        cat << 'EOF' > app/build.gradle
+        plugins {
+            id 'com.android.application'
+        }
+
+        android {
+            namespace 'com.antilag.service'
+            compileSdk 34
+
+            defaultConfig {
+                applicationId "com.antilag.service"
+                minSdk 26
+                targetSdk 34
+                versionCode 1
+                versionName "1.0"
+            }
+
+            buildTypes {
+                release {
+                    minifyEnabled false
+                    proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                }
+            }
+            compileOptions {
+                sourceCompatibility JavaVersion.VERSION_17
+                targetCompatibility JavaVersion.VERSION_17
+            }
+        }
+
+        dependencies {
+            implementation 'androidx.appcompat:appcompat:1.6.1'
+        }
+        EOF
+
+    - name: Generate AndroidManifest.xml
+      run: |
+        cat << 'EOF' > app/src/main/AndroidManifest.xml
+        <?xml version="1.0" encoding="utf-8"?>
+        <manifest xmlns:android="http://android.com"
+            xmlns:android1="http://android.com"
+            package="com.antilag.service">
+
+            <uses-permission android1:name="android.permission.FOREGROUND_SERVICE" />
+            <uses-permission android1:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+            <application
+                android1:allowBackup="true"
+                android1:icon="@mipmap/ic_launcher"
+                android1:label="AntiLag Service"
+                android1:supportsRtl="true">
+
+                <activity
+                    android1:name=".MainActivity"
+                    android1:theme="@android:style/Theme.NoDisplay"
+                    android1:exported="true">
+                    <intent-filter>
+                        <action android1:name="android.intent.action.MAIN" />
+                        <category android1:name="android.intent.category.LAUNCHER" />
+                    </intent-filter>
+                </activity>
+
+                <service
+                    android1:name=".AntiLagService"
+                    android1:foregroundServiceType="specialUse"
+                    android1:exported="false" />
+            </application>
+        </manifest>
+        EOF
+
+    - name: Generate AntiLagService.java
+      run: |
+        cat << 'EOF' > app/src/main/java/com/antilag/service/AntiLagService.java
+        package com.antilag.service;
+
+        import android.app.Notification;
+        import android.app.NotificationChannel;
+        import android.app.NotificationManager;
+        import android.app.Service;
+        import android.content.Intent;
+        import android.os.Build;
+        import android.os.IBinder;
+        import androidx.core.app.NotificationCompat;
+
+        public class AntiLagService extends Service {
+            private static final String CHANNEL_ID = "AntiLagChannel";
+            private boolean isRunning = true;
+
+            public native void kichHoatChongLag();
+
+            @Override
+            public void onCreate() {
+                super.onCreate();
+                taoNotificationChannel();
+                Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
+                        .setContentTitle("Anti-Lag Chạy Ngầm")
+                        .setContentText("Hệ thống tối ưu hóa game đang hoạt động...")
+                        .setSmallIcon(android.R.drawable.ic_dialog_info)
+                        .build();
+                
+                startForeground(1, notification);
+
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        while (isRunning) {
+                            try {
+                                System.loadLibrary("kk");
+                                kichHoatChongLag();
+                                Thread.sleep(5000);
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    }
+                }).start();
+            }
+
+            @Override
+            public int onStartCommand(Intent intent, int flags, int startId) {
+                return START_STICKY;
+            }
+
+            @Override
+            public void onDestroy() {
+                isRunning = false;
+                super.onDestroy();
+            }
+
+            @Override
+            public IBinder onBind(Intent intent) {
+                return null;
+            }
+
+            private void taoNotificationChannel() {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES = 26) {
+                    NotificationChannel serviceChannel = new NotificationChannel(
+                            CHANNEL_ID,
+                            "AntiLag Service Channel",
+                            NotificationManager.IMPORTANCE_LOW
+                    );
+                    NotificationManager manager = getSystemService(NotificationManager.class);
+                    if (manager != null) {
+                        manager.createNotificationChannel(serviceChannel);
+                    }
+                }
+            }
+        }
+        EOF
+
+    - name: Generate MainActivity.java
+      run: |
+        cat << 'EOF' > app/src/main/java/com/antilag/service/MainActivity.java
+        package com.antilag.service;
+
+        import android.app.Activity;
+        import android.content.Intent;
+        import android.os.Build;
+        import android.os.Bundle;
+
+        public class MainActivity extends Activity {
+            @Override
+            protected void onCreate(Bundle savedInstanceState) {
+                super.onCreate(savedInstanceState);
+                
+                Intent serviceIntent = new Intent(this, AntiLagService.class);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(serviceIntent);
+                } else {
+                    startService(serviceIntent);
+                }
+                
+                finish();
+            }
+        }
+        EOF
+
+    - name: Copy JNI Library (libkk.so)
+      run: |
+        if [ -f "libkk.so" ]; then
+          cp libkk.so app/src/main/jniLibs/arm64-v8a/libkk.so
+          echo "Sao chép libkk.so thành công!"
+        else
+          echo "LỖI: Không tìm thấy file libkk.so ở thư mục gốc!"
+          exit 1
+        fi
+
+    - name: Build APK with Gradle
+      run: ./gradlew :app:assembleDebug
+
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: AntiLag-Debug-APK
+        path: app/build/outputs/apk/debug/app-debug.apk
